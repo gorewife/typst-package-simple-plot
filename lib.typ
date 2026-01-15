@@ -75,7 +75,7 @@
     length: 0.1,
     stroke: black + 0.6pt,
     label-offset: 0.15,
-    label-size: 0.8em,
+    label-size: 0.65em,
   ),
   plot: (
     stroke: blue + 1.2pt,
@@ -87,7 +87,7 @@
     fill: black,
   ),
   labels: (
-    size: 1em,
+    size: 0.8em,
     offset: 0.3,
   ),
   xlabel-style: (
@@ -120,6 +120,64 @@
 // UTILITY FUNCTIONS
 // ============================================================================
 
+// Clip a line segment to a rectangle (all 4 edges) using Liang-Barsky
+#let clip-segment(p1, p2, xmin, ymin, xmax, ymax) = {
+  let (x1, y1) = p1
+  let (x2, y2) = p2
+
+  let dx = x2 - x1
+  let dy = y2 - y1
+
+  let t0 = 0.0
+  let t1 = 1.0
+
+  // Check each edge: left, right, bottom, top
+  let edges = (
+    (-dx, x1 - xmin),
+    (dx, xmax - x1),
+    (-dy, y1 - ymin),
+    (dy, ymax - y1),
+  )
+
+  for (p, q) in edges {
+    if p == 0 {
+      if q < 0 { return none }
+    } else {
+      let t = q / p
+      if p < 0 {
+        t0 = calc.max(t0, t)
+      } else {
+        t1 = calc.min(t1, t)
+      }
+      if t0 > t1 { return none }
+    }
+  }
+
+  let nx1 = x1 + t0 * dx
+  let ny1 = y1 + t0 * dy
+  let nx2 = x1 + t1 * dx
+  let ny2 = y1 + t1 * dy
+
+  ((nx1, ny1), (nx2, ny2))
+}
+
+// Convert user-friendly label-side to CeTZ anchor
+// "above" means label is above the point, so anchor at "south" (bottom of text)
+#let side-to-anchor(side) = {
+  if side == none { return none }
+  let mapping = (
+    "above": "south",
+    "below": "north",
+    "left": "east",
+    "right": "west",
+    "above-left": "south-east",
+    "above-right": "south-west",
+    "below-left": "north-east",
+    "below-right": "north-west",
+  )
+  mapping.at(side, default: side)  // fallback to raw anchor if not in mapping
+}
+
 #let format-number(n, precision: 2) = {
   if calc.abs(n - calc.round(n)) < 0.0001 {
     str(int(calc.round(n)))
@@ -136,11 +194,14 @@
     (max - min) / count
   } else {
     let range = max - min
-    let magnitude = calc.pow(10, calc.floor(calc.log(range, base: 10)))
-    let normalized = range / magnitude
-    if normalized <= 2 { magnitude * 0.5 }
-    else if normalized <= 5 { magnitude }
-    else { magnitude * 2 }
+    // Use range/10 as base to ensure ~10 ticks, then round to nice number
+    let raw-step = range / 10
+    let magnitude = calc.pow(10, calc.floor(calc.log(raw-step, base: 10)))
+    let normalized = raw-step / magnitude
+    if normalized <= 1.5 { magnitude }
+    else if normalized <= 3 { magnitude * 2 }
+    else if normalized <= 7 { magnitude * 5 }
+    else { magnitude * 10 }
   }
 
   let ticks = ()
@@ -222,6 +283,7 @@
 /// - ymax (auto, float): Maximum y value
 /// - width (auto, float): Plot width in cm
 /// - height (auto, float): Plot height in cm
+/// - scale (auto, float): Scale factor for the entire plot (default: 1)
 /// - xlabel (auto, content): X-axis label
 /// - ylabel (auto, content): Y-axis label
 /// - xlabel-pos (auto, str, array): X label position ("end", "center", or (x,y))
@@ -240,6 +302,11 @@
 /// - minor-grid-step (auto, int): Minor grid subdivisions per major tick
 /// - axis-x-pos (auto, float, str): X-axis y-position ("bottom", "center", or value)
 /// - axis-y-pos (auto, float, str): Y-axis x-position ("left", "center", or value)
+/// - axis-x-extend (auto, float, array): X-axis extension beyond plot (value or (left, right))
+/// - axis-y-extend (auto, float, array): Y-axis extension beyond plot (value or (bottom, top))
+/// - show-origin (auto, bool): Show "0" label at origin (default: true)
+/// - tick-label-size (auto, length): Font size for tick labels (default: 0.65em)
+/// - axis-label-size (auto, length): Font size for axis labels x/y (default: 0.8em)
 /// - style (none, dictionary): Style overrides
 /// - ..functions: Function/data specifications to plot
 #let plot(
@@ -249,6 +316,7 @@
   ymax: auto,
   width: auto,
   height: auto,
+  scale: auto,
   xlabel: auto,
   ylabel: auto,
   xlabel-pos: auto,
@@ -267,6 +335,11 @@
   minor-grid-step: auto,
   axis-x-pos: auto,
   axis-y-pos: auto,
+  axis-x-extend: auto,
+  axis-y-extend: auto,
+  show-origin: auto,
+  tick-label-size: auto,
+  axis-label-size: auto,
   style: none,
   ..functions,
 ) = context {
@@ -282,8 +355,11 @@
   let xmax = resolve(xmax, "xmax", 5)
   let ymin = resolve(ymin, "ymin", -5)
   let ymax = resolve(ymax, "ymax", 5)
-  let width = resolve(width, "width", 8)
+  let width = resolve(width, "width", 6)
   let height = resolve(height, "height", 6)
+  let scale = resolve(scale, "scale", 1)
+  let width = width * scale
+  let height = height * scale
   let xlabel = resolve(xlabel, "xlabel", none)
   let ylabel = resolve(ylabel, "ylabel", none)
   let xlabel-pos = resolve(xlabel-pos, "xlabel-pos", "end")
@@ -302,8 +378,25 @@
   let minor-grid-step = resolve(minor-grid-step, "minor-grid-step", 2)
   let axis-x-pos = resolve(axis-x-pos, "axis-x-pos", 0)
   let axis-y-pos = resolve(axis-y-pos, "axis-y-pos", 0)
+  let axis-x-extend = resolve(axis-x-extend, "axis-x-extend", 0)
+  let axis-y-extend = resolve(axis-y-extend, "axis-y-extend", 0)
+  let show-origin = resolve(show-origin, "show-origin", true)
+  let tick-label-size = resolve(tick-label-size, "tick-label-size", auto)
+  let axis-label-size = resolve(axis-label-size, "axis-label-size", auto)
+
+  // Normalize extend values to (left/bottom, right/top) tuples
+  let x-extend = if type(axis-x-extend) == array { axis-x-extend } else { (axis-x-extend, axis-x-extend) }
+  let y-extend = if type(axis-y-extend) == array { axis-y-extend } else { (axis-y-extend, axis-y-extend) }
 
   let s = merge-styles(style)
+
+  // Override style values with direct parameters if set
+  if tick-label-size != auto {
+    s.ticks.label-size = tick-label-size
+  }
+  if axis-label-size != auto {
+    s.labels.size = axis-label-size
+  }
 
   let x-scale = width / (xmax - xmin)
   let y-scale = height / (ymax - ymin)
@@ -344,6 +437,12 @@
       rect((bx1, by1), (bx2, by2), fill: s.background.fill, stroke: s.background.stroke)
     }
 
+    // Grid extension bounds (in canvas coordinates)
+    let grid-x-start = -x-extend.at(0) * x-scale
+    let grid-x-end = width + x-extend.at(1) * x-scale
+    let grid-y-start = -y-extend.at(0) * y-scale
+    let grid-y-end = height + y-extend.at(1) * y-scale
+
     // Minor grid
     if show-grid == "minor" or show-grid == "both" or show-grid == true {
       let minor-x-step = x-ticks.step / minor-grid-step
@@ -355,14 +454,14 @@
         let x = xmin + i * minor-x-step
         if x <= xmax {
           let cx = (x - xmin) * x-scale
-          line((cx, 0), (cx, height), stroke: s.grid.minor.stroke)
+          line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.minor.stroke)
         }
       }
       for i in range(ny) {
         let y = ymin + i * minor-y-step
         if y <= ymax {
           let cy = (y - ymin) * y-scale
-          line((0, cy), (width, cy), stroke: s.grid.minor.stroke)
+          line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.minor.stroke)
         }
       }
     }
@@ -371,22 +470,26 @@
     if show-grid == "major" or show-grid == "both" or show-grid == true {
       for x in x-ticks.ticks {
         let cx = (x - xmin) * x-scale
-        line((cx, 0), (cx, height), stroke: s.grid.major.stroke)
+        line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.major.stroke)
       }
       for y in y-ticks.ticks {
         let cy = (y - ymin) * y-scale
-        line((0, cy), (width, cy), stroke: s.grid.major.stroke)
+        line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.major.stroke)
       }
     }
 
-    // Axes
+    // Axes (with optional extension beyond plot area)
     let (x1, y-ax) = to-canvas(xmin, x-axis-y)
     let (x2, _) = to-canvas(xmax, x-axis-y)
-    line((x1, y-ax), (x2, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+    let x1-ext = x1 - x-extend.at(0) * x-scale
+    let x2-ext = x2 + x-extend.at(1) * x-scale
+    line((x1-ext, y-ax), (x2-ext, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
 
     let (x-ax, y1) = to-canvas(y-axis-x, ymin)
     let (_, y2) = to-canvas(y-axis-x, ymax)
-    line((x-ax, y1), (x-ax, y2), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+    let y1-ext = y1 - y-extend.at(0) * y-scale
+    let y2-ext = y2 + y-extend.at(1) * y-scale
+    line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
 
     // Ticks and labels
     let tick-len = s.ticks.length
@@ -416,9 +519,9 @@
     }
 
     // Origin label
-    if calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+    if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
       let (ox, oy) = to-canvas(0, 0)
-      content((ox - tick-len - s.ticks.label-offset, oy - tick-len - s.ticks.label-offset),
+      content((ox - tick-len - 0.05, oy - tick-len - 0.05),
               text(size: s.ticks.label-size)[0], anchor: "north-east")
     }
 
@@ -441,7 +544,26 @@
       content((lx + ox, ly + oy), text(size: s.labels.size)[#ylabel], anchor: ylabel-anchor)
     }
 
-    // Plot functions and data
+    // Extended bounds for clipping area
+    let x-clip-min = xmin - x-extend.at(0)
+    let x-clip-max = xmax + x-extend.at(1)
+    let y-clip-min = ymin - y-extend.at(0)
+    let y-clip-max = ymax + y-extend.at(1)
+
+    // Sampling bounds (extend further so lines reach clip edges)
+    let sample-margin = calc.max(xmax - xmin, ymax - ymin) * 0.5
+    let x-plot-min = x-clip-min - sample-margin
+    let x-plot-max = x-clip-max + sample-margin
+    let y-plot-min = y-clip-min - sample-margin
+    let y-plot-max = y-clip-max + sample-margin
+
+    // Clip bounds in canvas coordinates
+    let clip-x1 = grid-x-start
+    let clip-y1 = grid-y-start
+    let clip-x2 = grid-x-end
+    let clip-y2 = grid-y-end
+
+    // Plot functions and data (with manual line clipping)
     for func-spec in functions.pos() {
       let fn = func-spec.at("fn", default: none)
       let data-points = func-spec.at("points", default: none)
@@ -455,36 +577,50 @@
       let points-to-draw = ()
 
       if fn != none {
-        let domain-min = func-spec.at("domain", default: (xmin, xmax)).at(0)
-        let domain-max = func-spec.at("domain", default: (xmin, xmax)).at(1)
+        let domain-min = func-spec.at("domain", default: (x-plot-min, x-plot-max)).at(0)
+        let domain-max = func-spec.at("domain", default: (x-plot-min, x-plot-max)).at(1)
         let samples = func-spec.at("samples", default: s.plot.samples)
         let step = (domain-max - domain-min) / samples
-        let current-segment = ()
 
+        // Collect all valid points first
+        let all-points = ()
         for i in range(samples + 1) {
           let x = domain-min + i * step
           let y = fn(x)
-          if y != none and not (y).is-nan() and y >= ymin and y <= ymax {
+          if y != none and not (y).is-nan() {
             let (cx, cy) = to-canvas(x, y)
-            current-segment.push((cx, cy))
-            points-to-draw.push((cx, cy, i))
-          } else if current-segment.len() > 1 {
-            line(..current-segment, stroke: stroke-style)
-            current-segment = ()
+            all-points.push((cx, cy, i))
+            // Check if point is inside clip area for markers
+            if cx >= clip-x1 and cx <= clip-x2 and cy >= clip-y1 and cy <= clip-y2 {
+              points-to-draw.push((cx, cy, i))
+            }
           } else {
-            current-segment = ()
+            all-points.push(none)  // Mark break in function
           }
         }
-        if current-segment.len() > 1 {
-          line(..current-segment, stroke: stroke-style)
+
+        // Draw clipped line segments between consecutive valid points
+        for j in range(all-points.len() - 1) {
+          let pt1 = all-points.at(j)
+          let pt2 = all-points.at(j + 1)
+          if pt1 != none and pt2 != none {
+            let (x1, y1, _) = pt1
+            let (x2, y2, _) = pt2
+            let clipped = clip-segment((x1, y1), (x2, y2), clip-x1, clip-y1, clip-x2, clip-y2)
+            if clipped != none {
+              let (p1, p2) = clipped
+              line(p1, p2, stroke: stroke-style)
+            }
+          }
         }
 
         if label != none {
           let label-pos = func-spec.at("label-pos", default: 0.8)
-          let label-anchor = func-spec.at("label-anchor", default: "south-west")
+          let label-side = func-spec.at("label-side", default: none)
+          let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
           let lx = domain-min + (domain-max - domain-min) * label-pos
           let ly = fn(lx)
-          if ly != none and not (ly).is-nan() and ly >= ymin and ly <= ymax {
+          if ly != none and not (ly).is-nan() and ly >= y-plot-min and ly <= y-plot-max {
             let (cx, cy) = to-canvas(lx, ly)
             content((cx, cy), label, anchor: label-anchor)
           }
@@ -495,7 +631,7 @@
         let canvas-points = ()
         for (i, pt) in data-points.enumerate() {
           let (x, y) = pt
-          if x >= xmin and x <= xmax and y >= ymin and y <= ymax {
+          if x >= x-plot-min and x <= x-plot-max and y >= y-plot-min and y <= y-plot-max {
             let (cx, cy) = to-canvas(x, y)
             canvas-points.push((cx, cy))
             points-to-draw.push((cx, cy, i))
@@ -506,7 +642,8 @@
         }
         if label != none and canvas-points.len() > 0 {
           let label-pos = func-spec.at("label-pos", default: 0.8)
-          let label-anchor = func-spec.at("label-anchor", default: "south-west")
+          let label-side = func-spec.at("label-side", default: none)
+          let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
           let idx = calc.min(int(canvas-points.len() * label-pos), canvas-points.len() - 1)
           let (cx, cy) = canvas-points.at(idx)
           content((cx, cy), label, anchor: label-anchor)

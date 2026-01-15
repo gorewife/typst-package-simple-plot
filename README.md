@@ -14,6 +14,8 @@ Click on an image to see the source code.
 | Parabola | Trigonometric Functions | Scatter Plot |
 | [![Exponential](gallery/exponential.png)](gallery/exponential.typ) | [![Data Fit](gallery/data-fit.png)](gallery/data-fit.typ) | [![Markers](gallery/markers.png)](gallery/markers.typ) |
 | Exponential & Logarithmic | Data with Model Fit | Marker Types |
+| [![Extended Axes](gallery/extended-axes.png)](gallery/extended-axes.typ) | | |
+| Extended Axes | | |
 
 ## Features
 
@@ -109,12 +111,18 @@ Click on an image to see the source code.
 |-----------|------|---------|-------------|
 | `xmin`, `xmax` | float | -5, 5 | X-axis range |
 | `ymin`, `ymax` | float | -5, 5 | Y-axis range |
-| `width`, `height` | float | 8, 6 | Plot size in cm |
+| `width`, `height` | float | 6, 6 | Plot size in cm |
+| `scale` | float | 1 | Scale factor for the entire plot |
 | `xlabel`, `ylabel` | content | none | Axis labels |
 | `show-grid` | bool/str | false | Grid display: `true`, `false`, `"major"`, `"minor"`, `"both"` |
 | `minor-grid-step` | int | 2 | Minor grid subdivisions per major tick |
 | `axis-x-pos` | float/str | 0 | X-axis position: value, `"bottom"`, `"center"` |
 | `axis-y-pos` | float/str | 0 | Y-axis position: value, `"left"`, `"center"` |
+| `axis-x-extend` | float/array | 0 | Extend X-axis beyond plot: value or `(left, right)` |
+| `axis-y-extend` | float/array | 0 | Extend Y-axis beyond plot: value or `(bottom, top)` |
+| `show-origin` | bool | true | Show "0" label at origin |
+| `tick-label-size` | length | 0.65em | Font size for tick labels |
+| `axis-label-size` | length | 0.8em | Font size for axis labels (x, y) |
 
 ### Axis Label Placement
 
@@ -147,6 +155,8 @@ Each function is a dictionary with:
   samples: 100,           // Number of sample points
   label: $f(x)$,          // Optional label
   label-pos: 0.8,         // Label position (0-1)
+  label-side: "above",    // Label placement: "above", "below", "left", "right",
+                          // "above-left", "above-right", "below-left", "below-right"
   mark: "o",              // Marker type
   mark-size: 0.1,         // Marker size
   mark-fill: white,       // Marker fill color
@@ -302,6 +312,33 @@ Set defaults that apply to all subsequent plots:
   // Theoretical fit
   (fn: x => 0.15 * calc.pow(x, 2) + 0.3 * x,
    stroke: red + 1pt, label: [Model]),
+)
+```
+
+### Extended Axes
+
+Make axes extend beyond the plot area for a cleaner look:
+
+```typst
+#plot(
+  xmin: -5, xmax: 5,
+  ymin: -5, ymax: 5,
+  show-grid: true,
+  // Extend axes by 0.5 units in each direction
+  axis-x-extend: 0.5,
+  axis-y-extend: 0.5,
+  (fn: x => calc.pow(x, 2) / 5, stroke: blue + 1.5pt),
+)
+
+// Asymmetric extension: (left/bottom, right/top)
+#plot(
+  xmin: 0, xmax: 10,
+  ymin: 0, ymax: 8,
+  axis-x-pos: "bottom",
+  axis-y-pos: "left",
+  axis-x-extend: (0, 1),  // Only extend right
+  axis-y-extend: (0, 1),  // Only extend top
+  (fn: x => calc.sqrt(x) * 2, stroke: green + 1.5pt),
 )
 ```
 

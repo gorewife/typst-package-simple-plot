@@ -409,6 +409,11 @@ MIT License - see LICENSE file for details.
 
 All notable changes to simple-plot are documented here.
 
+### [0.2.5] - 2026-01-27
+
+#### Fixed
+- Function `label-pos` now respects explicit function domains; when no domain is set, it falls back to the axis range
+
 ### [0.2.0] - 2026-01-15
 
 #### Added

@@ -1,6 +1,6 @@
 [package]
 name = "simple-plot"
-version = "0.2.0"
+version = "0.2.5"
 entrypoint = "lib.typ"
 authors = ["Nathan Scheinmann"]
 license = "MIT"

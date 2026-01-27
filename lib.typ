@@ -577,8 +577,9 @@
       let points-to-draw = ()
 
       if fn != none {
-        let domain-min = func-spec.at("domain", default: (x-plot-min, x-plot-max)).at(0)
-        let domain-max = func-spec.at("domain", default: (x-plot-min, x-plot-max)).at(1)
+        let domain = func-spec.at("domain", default: none)
+        let domain-min = if domain == none { x-plot-min } else { domain.at(0) }
+        let domain-max = if domain == none { x-plot-max } else { domain.at(1) }
         let samples = func-spec.at("samples", default: s.plot.samples)
         let step = (domain-max - domain-min) / samples
 
@@ -618,8 +619,10 @@
           let label-pos = func-spec.at("label-pos", default: 0.8)
           let label-side = func-spec.at("label-side", default: none)
           let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
-          // Use visible area for label positioning, not extended sampling domain
-          let lx = x-clip-min + (x-clip-max - x-clip-min) * label-pos
+          // Use axis range unless a domain is explicitly provided.
+          let label-domain-min = if domain == none { x-clip-min } else { domain-min }
+          let label-domain-max = if domain == none { x-clip-max } else { domain-max }
+          let lx = label-domain-min + (label-domain-max - label-domain-min) * label-pos
           let ly = fn(lx)
           if ly != none and not (ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
             let (cx, cy) = to-canvas(lx, ly)

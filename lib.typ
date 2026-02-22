@@ -64,7 +64,7 @@
     stroke: none,
   ),
   axis: (
-    stroke: black + 0.8pt,
+    stroke: white + 0.8pt,
     arrow: "stealth",
   ),
   grid: (
